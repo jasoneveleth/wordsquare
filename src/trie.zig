@@ -4,15 +4,6 @@ pub const TrieView = struct {
     nodes: []const [26]u32,
     width: u8,
 
-    pub fn child(self: TrieView, node_index: u32, letter: u8) ?u32 {
-        const idx = letter - 'a';
-        std.debug.assert(idx < 26);
-        const val = self.nodes[node_index][idx];
-        if (val == 0) return null;
-        return val; // may be a real node index, or WORD_END (maxInt(u32)) — caller's job to know which, based on depth
-    }
-
-    // Caller owns the returned slice (nodes backs into it).
     pub fn read(allocator: std.mem.Allocator, path: []const u8) !TrieView {
         const bytes = try std.fs.cwd().readFileAlloc(allocator, path, 256 * 1024 * 1024);
         if (bytes.len < 10 or !std.mem.eql(u8, bytes[0..4], "TRIE"))
