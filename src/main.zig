@@ -1,5 +1,5 @@
 const std = @import("std");
-const ws = @import("wordsquare.zig");
+const ws = @import("trie.zig");
 
 fn solve_rec(trie: ws.TrieView, n: u8, fixed: []const ?u8, col_state: []u32, row_state: *u32, grid: []u8, raster_index: u8) bool {
     if (raster_index == n * n) return true;
@@ -38,7 +38,22 @@ pub fn main() !void {
     const a = gpa.allocator();
 
     const args = try std.process.argsAlloc(a);
-    const trie_path = if (args.len > 1) args[1] else "src/trie8.bin";
+
+    // usage: wordsquare <trie.bin>
+    //        wordsquare <words.txt> <n> <trie.bin>
+    const trie_path: []const u8 = switch (args.len) {
+        1 => "src/trie8.bin",
+        2 => args[1],
+        4 => blk: {
+            const n = try std.fmt.parseInt(usize, args[2], 10);
+            try ws.buildFromFile(a, args[1], n, args[3]);
+            break :blk args[3];
+        },
+        else => {
+            std.debug.print("usage: wordsquare [<words.txt> <n>] <trie.bin>\n", .{});
+            return;
+        },
+    };
     const trie = try ws.TrieView.read(a, trie_path);
     const n = trie.width;
     const n_cells = @as(usize, n) * n;

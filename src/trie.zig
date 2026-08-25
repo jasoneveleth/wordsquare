@@ -84,26 +84,14 @@ const PrefixTrie = struct {
     }
 };
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const a = gpa.allocator();
-    const args = try std.process.argsAlloc(a);
-    if (args.len < 4) {
-        std.debug.print("usage: wordsquare <words_file> <n> <out_trie>\n", .{});
-        return;
-    }
-    const n = try std.fmt.parseInt(usize, args[2], 10);
-
-    var trie = try PrefixTrie.init(a, n);
-    const words_text = try std.fs.cwd().readFileAlloc(a, args[1], 64 * 1024 * 1024);
+pub fn buildFromFile(allocator: std.mem.Allocator, words_path: []const u8, n: usize, out_path: []const u8) !void {
+    var trie = try PrefixTrie.init(allocator, n);
+    const words_text = try std.fs.cwd().readFileAlloc(allocator, words_path, 64 * 1024 * 1024);
     var it = std.mem.splitScalar(u8, words_text, '\n');
     while (it.next()) |raw| {
         const w = std.mem.trimRight(u8, raw, "\r \t");
         if (w.len != n) continue;
         trie.insert(w) catch continue;
     }
-    try trie.write(args[3]);
-
-    const view = try TrieView.read(a, args[3]);
-    std.debug.print("wrote {d} nodes (width={d}), read back ok\n", .{ view.nodes.len, view.width });
+    try trie.write(out_path);
 }
