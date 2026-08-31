@@ -30,4 +30,13 @@ pub fn build(b: *std.Build) void {
     const wasm_install = b.addInstallArtifact(wasm, .{ .dest_dir = .{ .override = .{ .custom = "wasm" } } });
     const wasm_step = b.step("wasm", "Build WASM module");
     wasm_step.dependOn(&wasm_install.step);
+
+    // HTTP server
+    const server_mod = b.createModule(.{
+        .root_source_file = b.path("src/server.zig"),
+        .target = native_target,
+        .optimize = optimize,
+    });
+    const server = b.addExecutable(.{ .name = "wordsquare-server", .root_module = server_mod });
+    b.installArtifact(server);
 }
