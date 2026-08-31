@@ -71,11 +71,14 @@ pub fn solve(trie: ws.TrieView, n: u8, fixed: []const ?u8, grid: []u8) bool {
     return solve_rec(trie, n, fixed, col_state[0 .. @as(usize, n) * n], &row_state, grid, 0);
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const a = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const a = init.gpa;
+    const io = init.io;
 
-    const args = try std.process.argsAlloc(a);
+    var args_list: std.ArrayList([]const u8) = .empty;
+    var args_it = std.process.Args.Iterator.init(init.minimal.args);
+    while (args_it.next()) |arg| try args_list.append(a, arg);
+    const args = args_list.items;
 
     // usage: wordsquare <trie.bin>
     //        wordsquare <words.txt> <n> <trie.bin>
@@ -84,7 +87,7 @@ pub fn main() !void {
         2 => args[1],
         4 => blk: {
             const n = try std.fmt.parseInt(usize, args[2], 10);
-            try ws.buildFromFile(a, args[1], n, args[3]);
+            try ws.buildFromFile(io, a, args[1], n, args[3]);
             break :blk args[3];
         },
         else => {
@@ -92,7 +95,7 @@ pub fn main() !void {
             return;
         },
     };
-    const trie = try ws.TrieView.read(a, trie_path);
+    const trie = try ws.TrieView.read(io, a, trie_path);
     const n = trie.width;
     const n_cells = @as(usize, n) * n;
 

@@ -60,7 +60,7 @@ const SolveIter = struct {
     }
 
     // Serialize to JSON into writer. Only emits n*n entries for arrays.
-    fn serialize(self: *const SolveIter, w: anytype) !void {
+    fn serialize(self: *const SolveIter, w: *std.Io.Writer) !void {
         const nn = self.n * self.n;
         try w.print("{{\"n\":{d},\"sp\":{d},\"started\":{},\"fixed\":[", .{ self.n, self.sp, self.started });
         for (0..nn) |i| {
@@ -145,7 +145,6 @@ const SolveIter = struct {
     }
 };
 
-var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var global_trie: ws.TrieView = undefined;
 
 const cors_headers: []const std.http.Header = &.{
@@ -233,8 +232,7 @@ fn handleRequest(
         }
 
         var out_buf: [131072]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&out_buf);
-        const w = fbs.writer();
+        var w: std.Io.Writer = .fixed(&out_buf);
 
         if (iter.next()) {
             const n = iter.n;
@@ -246,13 +244,13 @@ fn handleRequest(
                 try w.writeByte('"');
             }
             try w.writeAll("],\"state\":");
-            try iter.serialize(w);
+            try iter.serialize(&w);
             try w.writeByte('}');
         } else {
             try w.writeAll("{\"solution\":null}");
         }
 
-        try request.respond(fbs.getWritten(), .{
+        try request.respond(w.buffered(), .{
             .extra_headers = cors_headers ++ &[_]std.http.Header{.{ .name = "content-type", .value = "application/json" }},
         });
         return;
@@ -261,17 +259,22 @@ fn handleRequest(
     try request.respond("not found\n", .{ .status = .not_found, .extra_headers = cors_headers });
 }
 
-pub fn main() !void {
-    const a = gpa.allocator();
-    const args = try std.process.argsAlloc(a);
-    const trie_path: []const u8 = if (args.len >= 2) args[1] else "src/trie8.bin";
-    const port: u16 = if (args.len >= 3) try std.fmt.parseInt(u16, args[2], 10) else 8080;
+pub fn main(init: std.process.Init) !void {
+    const a = init.gpa;
+    const io = init.io;
 
-    global_trie = try ws.TrieView.read(a, trie_path);
+    var args_it = std.process.Args.Iterator.init(init.minimal.args);
+    _ = args_it.skip(); // argv[0]
+    const arg1 = args_it.next();
+    const arg2 = args_it.next();
+    const trie_path: []const u8 = if (arg1) |p| p else "src/trie8.bin";
+    const port: u16 = if (arg2) |p| try std.fmt.parseInt(u16, p, 10) else 8080;
 
-    const address = try std.net.Address.parseIp("127.0.0.1", port);
-    var listener = try address.listen(.{ .reuse_address = true });
-    defer listener.deinit();
+    global_trie = try ws.TrieView.read(io, a, trie_path);
+
+    const address = try std.Io.net.IpAddress.parse("127.0.0.1", port);
+    var listener = try address.listen(io, .{ .reuse_address = true });
+    defer listener.deinit(io);
 
     std.debug.print("listening on http://127.0.0.1:{d}\n", .{port});
     std.debug.print("  GET  /count\n", .{});
@@ -282,12 +285,12 @@ pub fn main() !void {
     var body_buf: [65536]u8 = undefined;
 
     outer: while (true) {
-        const conn = try listener.accept();
-        defer conn.stream.close();
+        var stream = try listener.accept(io);
+        defer stream.close(io);
 
-        var stream_reader = conn.stream.reader(&read_buf);
-        var stream_writer = conn.stream.writer(&write_buf);
-        var http_server = std.http.Server.init(stream_reader.interface(), &stream_writer.interface);
+        var stream_reader = stream.reader(io, &read_buf);
+        var stream_writer = stream.writer(io, &write_buf);
+        var http_server = std.http.Server.init(&stream_reader.interface, &stream_writer.interface);
 
         while (http_server.reader.state == .ready) {
             var request = http_server.receiveHead() catch |err| {

@@ -4,8 +4,8 @@ pub const TrieView = struct {
     nodes: []const [26]u32,
     width: u8,
 
-    pub fn read(allocator: std.mem.Allocator, path: []const u8) !TrieView {
-        const bytes = try std.fs.cwd().readFileAlloc(allocator, path, 256 * 1024 * 1024);
+    pub fn read(io: std.Io, allocator: std.mem.Allocator, path: []const u8) !TrieView {
+        const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(256 * 1024 * 1024));
         if (bytes.len < 10 or !std.mem.eql(u8, bytes[0..4], "TRIE"))
             return error.BadFormat;
         if (bytes[4] != 1) return error.UnsupportedVersion;
@@ -56,33 +56,32 @@ const PrefixTrie = struct {
         }
     }
 
-    pub fn write(self: *const PrefixTrie, path: []const u8) !void {
+    pub fn write(self: *const PrefixTrie, io: std.Io, path: []const u8) !void {
         const body_len = self.data.items.len * 26 * @sizeOf(u32);
         const buf = try self.allocator.alloc(u8, 10 + body_len);
         defer self.allocator.free(buf);
 
-        var fbs = std.io.fixedBufferStream(buf);
-        const w = fbs.writer();
+        var w: std.Io.Writer = .fixed(buf);
         try w.writeAll("TRIE");
         try w.writeByte(1); // version
         try w.writeByte(@intCast(self.width));
         try w.writeInt(u32, @intCast(self.data.items.len), .little);
         try w.writeAll(std.mem.sliceAsBytes(self.data.items));
 
-        const f = try std.fs.cwd().createFile(path, .{});
-        defer f.close();
-        try f.writeAll(fbs.getWritten());
+        const f = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer f.close(io);
+        try f.writeStreamingAll(io, w.buffered());
     }
 };
 
-pub fn buildFromFile(allocator: std.mem.Allocator, words_path: []const u8, n: usize, out_path: []const u8) !void {
+pub fn buildFromFile(io: std.Io, allocator: std.mem.Allocator, words_path: []const u8, n: usize, out_path: []const u8) !void {
     var trie = try PrefixTrie.init(allocator, n);
-    const words_text = try std.fs.cwd().readFileAlloc(allocator, words_path, 64 * 1024 * 1024);
+    const words_text = try std.Io.Dir.cwd().readFileAlloc(io, words_path, allocator, .limited(64 * 1024 * 1024));
     var it = std.mem.splitScalar(u8, words_text, '\n');
     while (it.next()) |raw| {
-        const w = std.mem.trimRight(u8, raw, "\r \t");
+        const w = std.mem.trimEnd(u8, raw, "\r \t");
         if (w.len != n) continue;
         trie.insert(w) catch continue;
     }
-    try trie.write(out_path);
+    try trie.write(io, out_path);
 }
