@@ -1,6 +1,44 @@
 const std = @import("std");
 const ws = @import("trie.zig");
 
+pub fn solve_iter(trie: ws.TrieView, n: usize, fixed: []const ?u8, grid: []u8) bool {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz";
+    var col_state: [81]u32 = undefined;
+    var row_state: [81]u32 = undefined;
+    var cand: [81]u8 = @splat(0);
+    var sp: usize = 0;
+
+    while (sp < n * n) {
+        const col_node: u32 = if (sp < n) 0 else col_state[sp - n];
+        const row_node: u32 = if (sp % n == 0) 0 else row_state[sp - 1];
+        const candidates: []const u8 = if (fixed[sp]) |*c| c[0..1] else alphabet;
+
+        var placed = false;
+        while (cand[sp] < candidates.len) {
+            const letter = candidates[cand[sp]];
+            cand[sp] += 1;
+            const col_next = trie.nodes[col_node][letter - 'a'];
+            if (col_next == 0) continue;
+            const row_next = trie.nodes[row_node][letter - 'a'];
+            if (row_next == 0) continue;
+            col_state[sp] = col_next;
+            row_state[sp] = row_next;
+            grid[sp] = letter;
+            sp += 1;
+            placed = true;
+            break;
+        }
+
+        if (!placed) {
+            if (sp == 0) return false;
+            cand[sp] = 0;
+            sp -= 1;
+        }
+    }
+
+    return true;
+}
+
 fn solve_rec(trie: ws.TrieView, n: u8, fixed: []const ?u8, col_state: []u32, row_state: *u32, grid: []u8, raster_index: u8) bool {
     if (raster_index == n * n) return true;
 
